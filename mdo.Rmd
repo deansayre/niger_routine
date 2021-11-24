@@ -1,0 +1,221 @@
+---
+title: "Situation d'Epidemiologique de Palu au Niger"
+author: "Niger International Working Group"
+date: "`r format(Sys.time(), '%A %d %B %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: zenburn
+    number_sections: yes
+    theme: spacelab
+    toc: yes
+    toc_collapse: no
+    toc_depth: 3
+    toc_float: yes
+    css: C:/Users/omp2/OneDrive - CDC/niger/style.css
+    includes:
+      in_header: header.html
+---
+
+
+<div class="watermark">Préliminaire</div>
+
+
+<div style="position: fixed; top: 3; left: 0px;; height: 15%;
+  width: 15%;">
+  ![](years.png)
+</div>
+
+
+
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      collapse = TRUE,
+                      fig.width = 7,
+                      fig.height = 6,
+                      dpi = 500,
+                      warning = FALSE,
+                      message = FALSE)
+
+```
+
+
+```{r}
+pacman::p_load(zoo, 
+               
+               tidyverse)
+
+color_5 <- c("#313167", "#747B74", 
+           "#B66E56", "#A33A36", 
+           "#BF9000")
+```
+
+# Data Import
+```{r}
+a <- rio::import_list("mdo_full.xlsx") %>% 
+  map(~linelist::clean_data(.x, guess_dates = F))   ## pulls in all sheets in MDO Excel file
+
+list2env(a, envir = .GlobalEnv) ## extracts elements to individual objects in Global Environment
+```
+
+# Wrangling
+```{r}
+
+palu_13c <- palu_13%>% 
+    pmap_dfr(., ~ na.locf(c(...)) %>%
+                      as.list %>%
+                      as_tibble) %>% 
+  filter(!is.na(surveillance_paludisme)) %>% 
+  filter(!str_detect(surveillance_paludisme, "total_")) %>% 
+  janitor::row_to_names(3) %>% 
+  select(-c(isocode, 217, 218)) %>% 
+  mutate(across(c(4:216), ~as.numeric(str_replace(.x,"_", "."))), 
+         pop = round(pop, 0)) %>% 
+  pivot_longer(!c(region, district, an, pop)) %>% 
+  mutate(week = paste0("s", str_sub(name, -2, -1)), 
+         var = str_sub(name, 1, 3), 
+         an = factor(an))
+
+
+test <- flatten(map(seq(1,53,1), ~rep(.x, 4)))
+
+suffix <- prepend(test, c("", ""))
+
+palu_14c <- palu_14%>% 
+    pmap_dfr(., ~ na.locf(c(...)) %>%
+                      as.list %>%
+                      as_tibble) %>% 
+  slice(-c(1,3)) %>% 
+    janitor::row_to_names(2)
+
+
+palu_14c <- set_names(palu_14c, map2(names(palu_14c), suffix, ~paste0(.x, "_", 
+                                                                      .y)))
+
+palu_14c1 <- palu_14c %>% 
+  pivot_longer(!c(region_, district_)) %>% 
+  mutate(week = paste0("s", word(name, -1, sep = "_")), 
+         value = round(as.numeric(str_replace(value, "_", ".")), 0)) %>% 
+  rename(region = region_, 
+         district = district_) %>% 
+  mutate(an = factor(2014), 
+         pop = NA, 
+         var = NA)
+
+
+palu_15c <- palu_15%>% 
+    pmap_dfr(., ~ na.locf(c(...)) %>%
+                      as.list %>%
+                      as_tibble) %>% 
+  filter(!is.na(surveillance_paludisme)) %>% 
+  filter(!str_detect(surveillance_paludisme, "total_")) %>% 
+  janitor::row_to_names(3) %>% 
+  select(-c(isocode, 157:224)) %>% 
+  mutate(across(c(4:155), ~as.numeric(str_replace(.x,"_", "."))), 
+         pop = round(pop, 0)) %>% 
+  pivot_longer(!c(region, district, an, pop)) %>% 
+  mutate(week = paste0("s", str_sub(name, -2, -1)), 
+         var = str_sub(name, 1, 3), 
+         an = factor(an))
+
+test <- flatten(map(seq(1,53,1), ~rep(.x, 4)))
+
+suffix <- prepend(test, c("", ""))
+
+palu_16c <- palu_16 %>% 
+  relocate(1, .after = 214) %>% 
+    pmap_dfr(., ~ na.locf(c(...)) %>%
+                      as.list %>%
+                      as_tibble) %>% 
+  slice(-c(1,3)) %>% 
+    janitor::row_to_names(2) %>% 
+  janitor::clean_names() %>% 
+    rename_with(.fn = ~paste0(.x, "_", "1"), .cols = c(2:5)) %>% 
+  pivot_longer(!c(district, region)) %>% 
+  mutate(week = paste0("s", word(name, -1, sep = "_")), 
+         value = round(as.numeric(str_replace(value, "_", ".")), 0), 
+         an = factor(2016),
+         pop = NA, 
+         var = NA)
+
+palu_17c <- palu_17 %>% 
+  slice(-c(1:2)) %>% 
+  pmap_dfr(., ~ na.locf(c(...)) %>%
+                      as.list %>%
+                      as_tibble) %>% 
+  janitor::row_to_names(1) %>% 
+  janitor::clean_names() %>% 
+  rename_with(.fn = ~paste0(.x, "_", "1"), .cols = c(3:6)) %>% 
+  pivot_longer(!c(district, region)) %>% 
+  mutate(week = paste0("s", word(name, -1, sep = "_")), 
+         value = round(as.numeric(str_replace(value, "_", ".")), 0), 
+         an = factor(2017))
+
+palu_19c <- palu_19%>% 
+    pmap_dfr(., ~ na.locf(c(...)) %>%
+                      as.list %>%
+                      as_tibble) %>% 
+  filter(!is.na(surveillance_paludisme)) %>% 
+  filter(!str_detect(surveillance_paludisme, "total_")) %>% 
+  janitor::row_to_names(3) %>% 
+  select(-c(isocode, 218:221)) %>% 
+  mutate(across(c(4:216), ~as.numeric(str_replace(.x,"_", "."))), 
+         pop = round(pop, 0)) %>% 
+  pivot_longer(!c(region, district, an, pop)) %>% 
+  mutate(week = paste0("s", str_sub(name, -2, -1)), 
+         var = str_sub(name, 1, 3), 
+         an = factor(an))
+  
+
+palu_20c <- palu_20%>% 
+    pmap_dfr(., ~ na.locf(c(...)) %>%
+                      as.list %>%
+                      as_tibble) %>% 
+  filter(!is.na(surveillance_palu)) %>% 
+  filter(!str_detect(surveillance_palu, "total_")) %>% 
+  janitor::row_to_names(3) %>%
+  janitor::clean_names() %>% 
+  mutate(an = 2020) %>%                   # changing year to 2020 (listed as 2019, but weeks correspond to 2020)
+    select(-c(isocode, 218:221)) %>% 
+  mutate(across(c(4:216), ~as.numeric(str_replace(.x,"_", "."))), 
+         pop = round(pop, 0)) %>% 
+  pivot_longer(!c(region, district, an, pop)) %>% 
+  mutate(week = paste0("s", str_sub(name, -2, -1)), 
+         var = str_sub(name, 1, 3), 
+         an = factor(an))
+
+palu_21c <- palu_21 %>% 
+    pmap_dfr(., ~ na.locf(c(...)) %>%
+                      as.list %>%
+                      as_tibble) %>% 
+  filter(!is.na(paludisme)) %>% 
+  filter(!str_detect(paludisme, "total_")) %>% 
+  janitor::row_to_names(3) %>%
+  janitor::clean_names() %>% 
+    select(-c(isocode, 214:221)) %>% 
+  mutate(across(c(4:212), ~as.numeric(str_replace(.x,"_", "."))), 
+         pop = round(pop, 0)) %>% 
+  pivot_longer(!c(region, district, an, pop)) %>% 
+  mutate(week = paste0("s", str_sub(name, -2, -1)), 
+         var = str_sub(name, 1, 3), 
+         an = factor(an))
+
+master_mdo <- bind_rows(palu_13c, palu_14c1, palu_15c, palu_16c, 
+                        palu_17c, palu_19c, palu_20c, palu_21c) %>% 
+  mutate(var = ifelse(is.na(var), word(name, start = 1, end = -2, sep = "_"), 
+                      var), 
+         var = case_when(var=="tdr_ge_positifs" ~ "cas", 
+                          var == "tdr_ge_realises" ~ "teste", 
+                          TRUE ~ var),
+         var = recode(var, "positif" = "pourcent_pos", 
+         "tax" = "incidence", 
+         "let" = "incid_deces"))
+
+
+
+ rm(list=ls(pattern="^palu_"))   # Removes all objects starting with "palu_"
+```
+

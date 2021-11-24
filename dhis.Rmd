@@ -1,0 +1,482 @@
+---
+title: "Situation d'Epidemiologique de Palu au Niger"
+author: "Niger International Working Group"
+date: "`r format(Sys.time(), '%A %d %B %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: zenburn
+    number_sections: yes
+    theme: spacelab
+    toc: no
+    css: C:/Users/omp2/OneDrive - CDC/niger/style.css
+    includes:
+      in_header: header.html
+---
+
+
+<div class="watermark">Préliminaire</div>
+
+
+<div style="position: fixed; top: 3; left: 0px;; height: 15%;
+  width: 15%;">
+  ![](years.png)
+</div>
+
+
+
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      collapse = TRUE,
+                      fig.width = 7,
+                      fig.height = 6,
+                      dpi = 500,
+                      warning = FALSE,
+                      message = FALSE)
+
+```
+
+
+```{r}
+color_5 <- c("#313167", "#747B74", 
+           "#B66E56", "#A33A36", 
+           "#BF9000")
+```
+
+# Introduction
+
+
+
+```{r}
+pacman::p_load(wesanderson, 
+               plotly, 
+               tidyverse)
+
+#pal <- wes_palette("Zissou1", n = 5)
+```
+
+# Loading data
+
+```{r}
+dhis_2021 <- rio::import("dhis_2021.xlsx") %>% 
+  linelist::clean_data(guess_dates = F) %>% 
+  select(-c(pays, periode, nombre_de_centre_de_sante_rapportant_de_nouvelles_consultations, nombre_de_centre_de_sante_qui_sont_censes_rapporter_de_nouvelles_consultations, 
+            nombre_de_femmes_enceintes_ayant_recu_leur_consultation_prenatale_cpn1_premiere_visite, nombre_de_femmes_enceintes_ayant_recu_leur_consultation_prenatale_cpn4_quatrieme_visite, nombre_de_femmes_enceintes_ayant_recu_le_tpi1, nombre_de_femmes_enceintes_ayant_recu_le_tpi3, nombre_de_centres_de_sante_rapportant_les_consultations_cpn, nombre_de_centres_de_sante_qui_sont_censes_rapporter_de_consultations_cpn, nombre_de_centre_de_sante_rapportant_des_cas_confirmes_de_paludisme, nombre_de_centres_de_sante_qui_sont_censes_rapporter_des_cas_confirmes_de_paludisme, `08_pec_palu_csi_rapports_recus_a_temps`, nombre_de_centre_de_sante_ayant_soumis_leur_rapport_mensuel_a_temps, nombre_de_cas_confirmes_de_paludisme_au_niveau_des_centres_de_sante, 
+            nombre_de_cas_traite_avec_act_au_niveau_des_centres_de_sante)) %>% 
+  group_by(region, mois_numerique, annee) %>% 
+  summarise(consultations_toutes_causes_confondues = sum(nombre_de_nouvelles_consultations_toutes_causes, na.rm = T), 
+            hospitalisations_toutes_causes_confondues = NA, 
+            deces_toutes_causes_confondues = NA, 
+            cas_suspects_de_paludisme = sum(nombre_de_cas_suspects_de_paludisme_fievre, na.rm = T), 
+            hospitalisations_liees_au_paludisme = sum(nombre_de_cas_graves_de_paludisme, na.rm = T), 
+            deces_lies_au_paludisme = sum(nombre_de_deces_dus_au_paludisme, na.rm = T), 
+            nombre_de_tests_de_palu_realises_microscopie = NA, 
+            cas_confirmes_de_paludisme_microscopie = NA, 
+            nombre_de_tests_de_palu_realises_rdt = NA, 
+            cas_confirmes_de_paludisme_rdt = NA, 
+            p_falciparum_rdt = NA, 
+            completude_des_rapports = NA, 
+            cas_confirmes_de_paludisme_microscopie1 = NA, 
+            cas_confirmes_de_paludisme_rdt1 = NA, 
+            cas_confirme = sum(nombre_de_cas_de_paludisme_confirmes_tdr_ou_ge, na.rm = T), 
+            nombre_de_tests_de_palu_realises_microscopie1 = NA, 
+            nombre_de_tests_de_palu_realises_rdt1 = NA, 
+            nombre_teste = sum(nombre_de_personnes_testees_pour_le_paludisme_tdr_et_ou_ge, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(prop_susp_all = round(100*cas_suspects_de_paludisme/
+                                 consultations_toutes_causes_confondues, 1), 
+         prop_pos_susp = round(100*cas_confirme/
+                                 cas_suspects_de_paludisme, 1), 
+         prop_pos_test = round(100*cas_confirme/
+                                 nombre_teste, 1), 
+         perc_hosp_palu = NA,
+         perc_deces_palu = NA,
+         annee = factor(annee)) %>% 
+  rename(regions = region, 
+         mois = mois_numerique)
+
+
+dhis <- rio::import("dhis2.xlsx", 
+                               which = "Country monthly aggregate") %>% 
+  janitor::row_to_names(1) %>% 
+  linelist::clean_data(guess_dates = F) %>% 
+  filter(annee != "annee") %>% 
+  filter(!is.na(annee)) %>% 
+  mutate(regions = str_remove(regions, "region_de_"), 
+         regions = str_remove(regions, "region_d_")) %>% 
+  discard(~all(is.na(.))) %>% 
+  mutate(completude_des_rapports = str_replace(completude_des_rapports, "_", "."),
+         across(-regions, as.numeric), 
+         prop_susp_all = round(100*cas_suspects_de_paludisme/
+                                 consultations_toutes_causes_confondues, 1), 
+         cas_confirmes_de_paludisme_microscopie1 = replace_na(cas_confirmes_de_paludisme_microscopie, 0),
+         cas_confirmes_de_paludisme_rdt1 = replace_na(cas_confirmes_de_paludisme_rdt, 0),
+         cas_confirme = cas_confirmes_de_paludisme_microscopie1 + 
+                                 cas_confirmes_de_paludisme_rdt1, 
+         nombre_de_tests_de_palu_realises_microscopie1 = replace_na(nombre_de_tests_de_palu_realises_microscopie,
+                                                                    0),
+         nombre_de_tests_de_palu_realises_rdt1 = replace_na(nombre_de_tests_de_palu_realises_rdt, 0),
+         nombre_teste = nombre_de_tests_de_palu_realises_microscopie1 + 
+                                 nombre_de_tests_de_palu_realises_rdt1,
+         prop_pos_susp = round(100*(cas_confirmes_de_paludisme_microscopie + 
+                                 cas_confirmes_de_paludisme_rdt)/
+                                 cas_suspects_de_paludisme, 1), 
+         prop_pos_test = round(100*(cas_confirmes_de_paludisme_microscopie + 
+                                 cas_confirmes_de_paludisme_rdt)/
+                                 nombre_teste, 1), 
+         perc_hosp_palu = round(100*hospitalisations_liees_au_paludisme/
+                                       hospitalisations_toutes_causes_confondues, 1),
+         perc_deces_palu = round(100*deces_lies_au_paludisme/
+                                       deces_toutes_causes_confondues, 1),
+         annee = factor(annee)) %>% 
+  filter(annee != 2021) %>% 
+  bind_rows(dhis_2021)
+
+
+nationwide <- dhis %>% 
+  group_by(annee, mois) %>% 
+  summarise(all_cause = sum(consultations_toutes_causes_confondues, na.rm = T), 
+            suspected = sum(cas_suspects_de_paludisme, na.rm = T), 
+            tested = sum(nombre_teste, na.rm = T),
+            confirmed = sum(cas_confirme, na.rm = T), 
+            hosp_palu = sum(hospitalisations_liees_au_paludisme, na.rm = T), 
+            tot_hosp = sum(hospitalisations_toutes_causes_confondues,
+                           na.rm = T), 
+            deces_palu = sum(deces_lies_au_paludisme, na.rm = T), 
+            deces_tot = sum(deces_toutes_causes_confondues, na.rm = T)) %>% 
+  mutate(prop_susp = round(100*suspected/all_cause, 1),
+         prop_confirmed = round(100*confirmed/suspected, 1))
+
+
+
+rain <- rio::import("rain.xlsx") %>% 
+  linelist::clean_data(guess_data = F) %>% 
+  mutate(date_observed = as.character(date_observed), 
+         year = factor(word(date_observed, 1, sep = "-")), 
+         month = as.numeric(word(date_observed, 2, sep = "-"))) %>% 
+  group_by(month, year) %>% 
+  summarise(rain_tot = sum(rainfall))
+
+
+
+```
+
+```{r}
+dhis_ave <- dhis %>% 
+  group_by(annee, mois) %>% 
+  summarise(all_cause = sum(consultations_toutes_causes_confondues, na.rm = T), 
+            suspected = sum(cas_suspects_de_paludisme, na.rm = T), 
+            confirmed = sum(cas_confirme, na.rm = T), 
+            hosp_palu = sum(hospitalisations_liees_au_paludisme, na.rm = T), 
+            tot_hosp = sum(hospitalisations_toutes_causes_confondues,
+                           na.rm = T), 
+            deces_palu = sum(deces_lies_au_paludisme, na.rm = T), 
+            deces_tot = sum(deces_toutes_causes_confondues, na.rm = T)) %>% 
+  ungroup() %>% 
+  group_by(mois) %>% 
+  mutate(all_cause_mean = mean(all_cause), 
+         all_cause_perc = round(100*(all_cause - all_cause_mean)/
+                                     all_cause_mean, 1), 
+         suspected_mean = mean(suspected), 
+         suspected_perc = round(100*(suspected - suspected_mean)/
+                                     suspected_mean, 1), 
+         cas_confirme_mean = mean(confirmed), 
+         cas_confirme_perc = round(100*(confirmed - cas_confirme_mean)/
+                                     cas_confirme_mean, 1))
+```
+
+```{r}
+# Total by year
+total_dhis_monthly <- nationwide%>% 
+  group_by(annee) %>% 
+  summarise(all_cause = sum(all_cause, na.rm = T), 
+            suspected = sum(suspected, na.rm = T), 
+            tested = sum(tested, na.rm = T),
+            confirmed = sum(confirmed, na.rm = T))
+```
+
+
+## DHIS2 - National {.tabset .tabset-fade .tabset-pills}
+
+```{r}
+nation_month <- function(y, ...){
+  a <- ggplot(nationwide)+
+  geom_line(aes(x = mois, y = {{y}}, color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(0, 12))+
+  theme_minimal()+
+    ... +
+  theme(legend.position = "none")
+
+
+return(ggplotly(a))
+}
+```
+
+
+### All-cause consultations
+
+```{r out.width= 700, out.height = 500}
+
+nation_month(all_cause, labs(x = "Mois", 
+                             y = "Consultations toutes cause confondue"))
+
+```
+
+### Suspected Malaria Cases
+```{r out.width= 700, out.height = 500}
+
+nation_month(suspected, labs(x = "Mois", y = "Cas Suspects"))
+
+
+
+```
+
+```{r}
+nation_month(tested, labs(x = "Mois", y = "Personnes testés"))
+
+
+```
+
+
+### Confirmed Malaria Cases
+```{r out.width= 700, out.height = 500}
+
+nation_month(confirmed, labs(x = "Mois", y = "Cas Confirmés"))
+
+
+```
+
+### Hospitalizations Liées au palu (Nombre)
+
+```{r out.height=500, out.width=700}
+
+nation_month(hosp_palu, labs(x = "Mois", 
+                             y = "Hospitalizations liées au palu"))
+
+
+```
+
+###  Deces liées au palu (nombre)
+
+```{r out.height=500, out.width=700}
+nation_month(deces_palu, labs(x = "Mois", 
+                             y = "Deces liées au palu"))
+
+```
+
+### Proportion of Suspected Malaria cases among all cause
+
+```{r out.width= 700, out.height = 500}
+b <- ggplot(nationwide)+
+  geom_line(aes(x = mois, y = prop_susp, color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(1, 12))+
+  labs(x = "Mois", 
+       y = "Cas Suspects (pourcentage)")+
+  coord_cartesian(ylim = c(0, 110))+
+  theme_minimal()+
+  theme(legend.position = "none")
+
+ggplotly(b)
+```
+
+
+### Proportion Malaria among suspect cases
+```{r out.width= 700, out.height = 500}
+c <- ggplot(nationwide)+
+  geom_line(aes(x = mois, y = prop_confirmed, color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(1, 12))+
+  labs(x = "Mois", 
+       y = "Taux de positivé (pourcentage parmi les suspects)")+
+  geom_hline(yintercept = 100, linetype = 'dotted')+
+  coord_cartesian(ylim = c(0, 110))+
+  theme_minimal()+
+  theme(legend.position = "none")
+
+ggplotly(c)
+```
+
+### Test Positivity Rate among those tested
+```{r out.width= 700, out.height = 500}
+b <- nationwide %>% 
+  mutate(prop_pos_test = 100*confirmed/tested) %>% 
+  ggplot()+
+  geom_line(aes(x = mois, y = prop_pos_test, color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(1, 12))+
+  labs(x = "Mois", 
+       y = "Taux de Positive (Pourcentage parmi les testes)")+
+  coord_cartesian(ylim = c(0, 110))+
+  theme_minimal()+
+  theme(legend.position = "none")
+
+ggplotly(b)
+```
+
+### Deces liées au palu (pourcentage)
+```{r out.width= 700, out.height = 500}
+a <- nationwide %>%
+  mutate(perc_deces = round(100*deces_palu/deces_tot, 1)) %>% 
+  ggplot()+
+  geom_line(aes(x = mois, y = perc_deces, color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(0, 12))+
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  theme_minimal()+
+  theme(legend.position = "none")
+
+ggplotly(a)
+```
+
+## DHIS2 - Regionally {.tabset .tabset-fade .tabset-pills}
+### Consultations Toutes Cause Confondues
+```{r}
+dhis %>% 
+  mutate(regions = str_to_title(regions)) %>% 
+  ggplot()+
+  geom_line(aes(x = mois, y = consultations_toutes_causes_confondues, 
+                color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(0, 12))+
+  labs(x = "Mois", 
+       y = "Cas Confirmés")+
+  theme_minimal()+
+  coord_cartesian(ylim = c(0, 400000))+
+  theme(legend.position = "none")+
+  facet_wrap(~regions)
+
+```
+
+### Cas Confirmés
+```{r}
+dhis %>% 
+  mutate(regions = str_to_title(regions)) %>% 
+  ggplot()+
+  geom_line(aes(x = mois, y = cas_confirme, color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(0, 12))+
+  labs(x = "Mois", 
+       y = "Cas Confirmés")+
+  theme_minimal()+
+  theme(legend.position = "none")+
+  facet_wrap(~regions)
+  
+```
+
+### Hospitalizations liées au paludisme
+```{r}
+dhis %>% 
+  mutate(regions = str_to_title(regions)) %>% 
+  ggplot()+
+  geom_line(aes(x = mois, y = hospitalisations_liees_au_paludisme, 
+                color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(0, 12))+
+  labs(x = "Mois", 
+       y = "Hospitalizations liées au palu (nombre)")+
+  geom_hline(yintercept = 100, linetype = 'dotted')+
+  theme_minimal()+
+  theme(legend.position = "none")+
+  facet_wrap(~regions)
+
+
+```
+
+
+### Number of Deaths attributed to Malaria
+```{r}
+dhis %>% 
+  mutate(regions = str_to_title(regions)) %>% 
+  ggplot()+
+  geom_line(aes(x = mois, y = deces_lies_au_paludisme, 
+                color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(0, 12))+
+  labs(x = "Mois", 
+       y = "Deces liées au palu (nombre)")+
+  geom_hline(yintercept = 100, linetype = 'dotted')+
+  theme_minimal()+
+  theme(legend.position = "none")+
+  facet_wrap(~regions)
+
+```
+
+### Suspected cases among all-cause consultations
+```{r}
+dhis %>% 
+  mutate(regions = str_to_title(regions)) %>% 
+  ggplot()+
+  geom_line(aes(x = mois, y = prop_susp_all, color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(0, 12))+
+  labs(x = "Mois", 
+       y = "Cas Suspects (pourcentage)")+
+  coord_cartesian(ylim = c(0, 110))+
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  theme_minimal()+
+  theme(legend.position = "none")+
+  facet_wrap(~regions)
+```
+
+### Test Positivity Rate among those tested
+```{r}
+
+dhis %>% 
+  mutate(regions = str_to_title(regions)) %>% 
+  ggplot()+
+  geom_line(aes(x = mois, y = prop_pos_test, color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(0, 12))+
+  labs(x = "Mois", 
+       y = "Taux de Positive (Pourcentage)")+
+  coord_cartesian(ylim = c(0, 110))+
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  theme_minimal()+
+  theme(legend.position = "none")+
+  facet_wrap(~regions)
+
+```
+
+### Percent of Deaths attributed to Malaria
+
+```{r}
+dhis %>% 
+  mutate(regions = str_to_title(regions)) %>% 
+  ggplot()+
+  geom_line(aes(x = mois, y = perc_deces_palu , 
+                color = annee))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(0, 12))+
+  labs(x = "Mois", 
+       y = "Deces liées au palu (pourcentage)")+
+  geom_hline(yintercept = 100, linetype = 'dotted')+
+  theme_minimal()+
+  theme(legend.position = "none")+
+  facet_wrap(~regions)
+
+```
+
+
+
+
+## Rain
+```{r out.height= 500, out.width=700}
+
+a <- ggplot(rain)+
+  geom_line(aes(x = month, y = rain_tot,color = year))+
+  scale_colour_manual(values=color_5)+
+  scale_x_continuous(n.breaks = 12, limits = c(0, 12))+
+  theme_minimal()+
+  theme(legend.position = "none")+
+  labs(x = "Mois", 
+       y = "")
+
+ggplotly(a)  
+
+```
+

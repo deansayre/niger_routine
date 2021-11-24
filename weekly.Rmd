@@ -1,0 +1,209 @@
+---
+title: "Situation d'Epidemiologique de Palu au Niger"
+author: "Niger International Working Group"
+date: "`r format(Sys.time(), '%A %d %B %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: zenburn
+    number_sections: yes
+    theme: spacelab
+    toc: yes
+    toc_collapse: no
+    toc_depth: 3
+    toc_float: yes
+    css: C:/Users/omp2/OneDrive - CDC/niger/style.css
+    includes:
+      in_header: header.html
+---
+
+
+<div class="watermark">Préliminaire</div>
+
+
+<div style="position: fixed; top: 3; left: 0px;; height: 15%;
+  width: 15%;">
+  ![](years.png)
+</div>
+
+
+
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      collapse = TRUE,
+                      fig.width = 7,
+                      fig.height = 6,
+                      dpi = 500,
+                      warning = FALSE,
+                      message = FALSE)
+
+```
+
+
+```{r}
+color_5 <- c("#313167", "#747B74", 
+           "#B66E56", "#A33A36", 
+           "#BF9000")
+```
+
+
+## Loading data with minimal cleaning
+
+```{r}
+weekly <- rio::import("weekly.xlsx") %>% 
+    linelist::clean_data(guess_dates = F) %>% 
+    mutate(region = str_remove(region, "region_de_"), 
+         region = str_remove(region, "region_d_"))
+```
+
+# Data Completeness
+```{r}
+counts <- weekly %>% 
+relocate(region) %>% 
+  group_by(region, districts) %>% 
+  summarise(years = n(), 
+            last_year = max(annee, na.rm = T), 
+            first_year = min(annee, na.rm = T)) %>% 
+  arrange(region, districts)
+```
+
+Given the number of districts added in 2017 and out of concern that the units
+may have changed over time (i.e., renamed, restructured, etc), only the last 4
+years will be used
+
+```{r}
+weekly_recent <- weekly %>% 
+  filter(annee >=2017 & annee != 2020)
+```
+
+```{r}
+nation_w <- weekly_recent %>% 
+  group_by(annee) %>% 
+  summarise(across(s1:s53, ~sum(.x, na.rm = T))) %>% 
+  pivot_longer(!annee, names_to = "week")
+
+week_f <- nation_w %>% 
+  filter(annee == 2017) %>% 
+  select(week) %>% 
+  as_vector()
+library(magrittr)
+nation_w %<>%
+  mutate(week = factor(week, ordered = T, levels = week_f), 
+         annee = factor(annee))
+
+ggplot(nation_w, aes(x = week, y = value, color= annee))+
+  geom_line(aes(group = annee))+
+  scale_colour_manual(values=color_5)
+
+```
+
+
+```{r}
+# totals and comparison with dhis2
+total_weekly <- nation_w %>% 
+  mutate(annee = factor(annee)) %>% 
+  group_by(annee) %>% 
+  summarise(cases = sum(value, na.rm = T)) %>% 
+  left_join(total_dhis_monthly, by = "annee") %>% 
+  mutate(diff_dhis = cases - confirmed)
+```
+
+```{r}
+mean_sd <- list(
+  mean = ~mean(.x, na.rm = TRUE), 
+  sd = ~sd(.x, na.rm = TRUE), 
+  count = ~sum(!is.na(.x)))
+
+mean_sd_week <- weekly_recent %>% 
+  group_by(districts) %>% 
+  summarise(across(s1:s53, mean_sd)) %>% 
+  pivot_longer(!districts) %>% 
+  mutate(week = word(name, 1, sep = "_"), 
+         name = word(name, 2, sep = "_")) %>% 
+  pivot_wider(names_from = "name") %>% 
+  mutate(limit = mean + 2*sd)
+
+median_q3 <- list(
+  median = ~median(.x, na.rm = TRUE), 
+  q3 = ~quantile(.x, 0.75, na.rm = TRUE), 
+  count = ~sum(!is.na(.x)))
+
+median_q3_week <- weekly_recent %>% 
+  group_by(districts) %>% 
+  summarise(across(s1:s53, median_q3)) %>% 
+  pivot_longer(!districts) %>% 
+  mutate(week = word(name, 1, sep = "_"), 
+         name = word(name, 2, sep = "_")) %>% 
+  pivot_wider(names_from = "name") %>% 
+  mutate(limit = median + q3)
+
+test_2020 <- weekly %>% 
+  filter(annee == 2020) %>% 
+  select(-c(annee, region)) %>% 
+  pivot_longer(!districts) %>% 
+  left_join(mean_sd_week, by = c("districts" = "districts", 
+                                   "name" = "week")) %>% 
+  filter(value > limit & name != "s53")
+  
+
+```
+
+# look at methods of confirmation, how many rdts used, number of reporting facilities and chws
+
+```{r}
+weekly_csi_2021 <- rio::import("Niger_District-Ingall.xlsx", 
+                               which = "Cas hebdo") %>% 
+  slice(-c(1:2)) %>% 
+  janitor::row_to_names(1) %>% 
+  linelist::clean_data(guess_dates = F) %>% 
+  select(-c(57:58)) %>% 
+  mutate(across(c(4:56), as.numeric)) %>% 
+  slice(c(1:66))
+#  rowwise() %>% 
+#  mutate(max = max(c_across(4:56), na.rm = T), 
+#         min = min(c_across(4:56), na.rm = T), 
+#         mean = mean(c_across(4:56), na.rm = T)) %>% 
+#  ungroup() %>% 
+#  na_if(Inf) %>% 
+#  na_if(-Inf) %>% 
+#  drop_na(all_of(c(2:56)))  
+
+dummy <- weekly_csi_2021 %>% 
+  rowwise() %>% 
+  group_by(annee) %>% 
+  summarise(total = sum(c_across(4:56), na.rm = T))
+
+weekly_district <- rio::import("Niger_District-Ingall.xlsx", which = "Districts") %>% 
+  select(-1) %>% 
+  slice(-1) %>% 
+    janitor::row_to_names(1) %>% 
+  rename_with(.fn = ~paste0("s",.x), .cols = c(2:54)) %>% 
+  mutate(across(c(2:54), as.numeric)) %>% 
+  drop_na(all_of(c(2:54))) %>% 
+  linelist::clean_data(guess_dates = F)
+
+dummy <- weekly_csi_2021 %>% 
+  mutate(total = rowSums(across(where(is.numeric)), na.rm = T)) %>% 
+  group_by(annee) %>% 
+  summarise(cases = sum(total))
+
+dummy1 <-  weekly_csi_2021 %>% 
+  group_by(annee) %>% 
+  summarise(across(c(s1:s53), ~ sum(.x, na.rm = TRUE)))
+  
+
+mean_med<- list(
+  mean = ~mean(.x, na.rm = TRUE), 
+  median = ~median(.x, na.rm = TRUE)
+)
+test <- weekly_district %>% summarise(across(where(is.numeric), mean_med))
+```
+
+```{r}
+
+```
+
+
